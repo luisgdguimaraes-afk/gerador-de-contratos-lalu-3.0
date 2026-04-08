@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: gerador-contratos-backend
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: |
+      # Atualizar apt-get
+      apt-get update
+      # Instalar LibreOffice
+      apt-get install -y libreoffice libreoffice-writer
+      # Instalar dependências Python
+      pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: LIBREOFFICE_PATH
+        value: /usr/bin/soffice
+      - key: OPENAI_API_KEY
+        sync: false
