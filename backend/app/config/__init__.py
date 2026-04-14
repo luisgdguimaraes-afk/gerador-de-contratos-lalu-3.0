@@ -1,0 +1,2 @@
+"""Configurações estáticas da aplicação."""
+

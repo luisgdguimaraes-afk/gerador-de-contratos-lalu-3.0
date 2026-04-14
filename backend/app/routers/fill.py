@@ -5,6 +5,7 @@ Agora suporta múltiplos documentos (ex: Quadro Resumo + Condições Gerais),
 mesclando tudo em um único PDF para download.
 """
 import os
+import shutil
 import uuid
 from typing import Dict, Any, Optional, List
 
@@ -15,6 +16,8 @@ from app.services.document_filler import DocumentFiller
 from app.services.document_storage import DocumentStorage
 from app.services.template_service import TemplateService
 from app.services.pdf_generator import PDFGenerator
+from app.services.contract_schema import ROTA_DO_SOL_SCHEMA
+from app.config.parties import STATIC_PARTIES
 
 router = APIRouter()
 filler = DocumentFiller()
@@ -26,6 +29,56 @@ class FillTemplateRequest(BaseModel):
     template_id: Optional[str] = "rota_do_sol"
     fields: Dict[str, Any]  # field_id -> value
     buyer_type: Optional[str] = None  # "PF" ou "PJ" - se None, será detectado automaticamente
+
+
+def _has_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip() != ""
+    return True
+
+
+def _prepare_fields(raw_fields: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Prepara payload final:
+    - ignora VENDEDOR_* enviado pelo cliente (usa dados fixos)
+    - exige somente uma seção entre IMOBILIARIA_* e CORRETOR_*
+    - limpa placeholders da seção não utilizada para evitar saída duplicada
+    """
+    sanitized_user_fields = {
+        key: value
+        for key, value in raw_fields.items()
+        if not key.startswith("VENDEDOR_")
+    }
+
+    has_imobiliaria = any(
+        key.startswith("IMOBILIARIA_") and _has_value(value)
+        for key, value in sanitized_user_fields.items()
+    )
+    has_corretor = any(
+        key.startswith("CORRETOR_") and _has_value(value)
+        for key, value in sanitized_user_fields.items()
+    )
+
+    if has_imobiliaria and has_corretor:
+        raise ValueError(
+            "Preencha apenas uma opção de intermediação: "
+            "'Dados da Imobiliária' OU 'Dados do Corretor'."
+        )
+
+    # Se só uma opção foi informada, zera todos os placeholders da outra.
+    if has_imobiliaria and not has_corretor:
+        for field_id in ROTA_DO_SOL_SCHEMA.keys():
+            if field_id.startswith("CORRETOR_"):
+                sanitized_user_fields[field_id] = ""
+    elif has_corretor and not has_imobiliaria:
+        for field_id in ROTA_DO_SOL_SCHEMA.keys():
+            if field_id.startswith("IMOBILIARIA_"):
+                sanitized_user_fields[field_id] = ""
+
+    # Dados fixos sempre prevalecem.
+    return {**sanitized_user_fields, **STATIC_PARTIES}
 
 
 @router.post("/fill")
@@ -41,11 +94,13 @@ async def fill_template(request: FillTemplateRequest):
         print(f"[FILL] ========== INÍCIO DA REQUISIÇÃO ==========", flush=True)
         print(f"[FILL] Recebendo requisição para preencher template: {request.template_id}", flush=True)
         print(f"[FILL] Campos recebidos: {len(request.fields)} campos", flush=True)
+        prepared_fields = _prepare_fields(request.fields)
+        print(f"[FILL] Campos após saneamento: {len(prepared_fields)} campos", flush=True)
 
         # Detectar ou usar buyer_type fornecido (mantido para logs e compatibilidade)
         buyer_type = request.buyer_type
         if not buyer_type:
-            buyer_type = filler._detect_buyer_type(request.fields) or "PF"
+            buyer_type = filler._detect_buyer_type(prepared_fields) or "PF"
         print(f"[FILL] Tipo de comprador detectado: {buyer_type}", flush=True)
 
         # Gerar ID único base para todos os documentos relacionados
@@ -82,7 +137,7 @@ async def fill_template(request: FillTemplateRequest):
 
                 # Preencher DOCX em memória
                 print(f"[FILL] Preenchendo DOCX em memória...")
-                filled_doc = filler.fill_document_from_path(str(template_path), request.fields)
+                filled_doc = filler.fill_document_from_path(str(template_path), prepared_fields)
                 print(f"[FILL] DOCX preenchido com sucesso")
 
                 # Salvar DOCX temporário
@@ -102,9 +157,14 @@ async def fill_template(request: FillTemplateRequest):
                 final_download_id = f"{document_id}_{doc_id}"
                 print(f"[FILL] Convertendo '{doc_id}' para PDF com ID: {final_download_id}")
                 print(f"[FILL] Diretório de saída: {storage.get_output_dir()}")
+
+                # Persistir DOCX final para permitir download em Word.
+                final_docx_path = os.path.join(storage.get_output_dir(), f"{final_download_id}.docx")
+                shutil.copyfile(temp_docx_path, final_docx_path)
+                print(f"[FILL] DOCX final de '{doc_id}' salvo em: {final_docx_path}")
                 
                 final_pdf_path = await pdf_generator.convert_to_pdf(
-                    temp_docx_path,
+                    final_docx_path,
                     final_download_id,  # ID sem extensão .pdf (o método já adiciona)
                     storage.get_output_dir(),  # Salvar direto no output, não em temp
                 )
@@ -138,6 +198,7 @@ async def fill_template(request: FillTemplateRequest):
                         "id": doc_id,
                         "name": doc_info["name"],
                         "download_id": final_download_id,
+                        "formats": ["pdf", "docx"],
                     }
                 )
                 print(f"[FILL] OK - Documento '{doc_id}' processado com sucesso! Total processados: {len(documents_info)}", flush=True)

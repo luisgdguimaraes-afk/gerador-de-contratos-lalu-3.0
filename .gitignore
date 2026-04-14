@@ -1,10 +1,15 @@
 Documentos-LALU-master.zip
 *.zip
+/package-lock.json
 
 # Secrets e ambiente local
 .env
 .env.*
 !.env.example
+
+# Backend: artefatos gerados localmente (não versionar)
+backend/temp/
+backend/output/
 
 # Python
 __pycache__/

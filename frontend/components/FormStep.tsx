@@ -24,6 +24,7 @@ interface FormStepProps {
 export default function FormStep({ fields, sections, onSubmit, isLoading = false }: FormStepProps) {
   const [error, setError] = useState<string | null>(null)
   const [buyerType, setBuyerType] = useState<'PF' | 'PJ'>('PF')
+  const [intermediaryType, setIntermediaryType] = useState<'IMOBILIARIA' | 'CORRETOR'>('IMOBILIARIA')
   const [formStepIndex, setFormStepIndex] = useState(0)
   const { register, handleSubmit, formState: { errors }, setValue, watch } = useForm()
 
@@ -37,6 +38,8 @@ export default function FormStep({ fields, sections, onSubmit, isLoading = false
   const filteredFields = fields.filter(field => {
     if (field.section_id === 'COMPRADOR_PF' && buyerType !== 'PF') return false
     if (field.section_id === 'COMPRADOR_PJ' && buyerType !== 'PJ') return false
+    if (field.section_id === 'IMOBILIARIA' && intermediaryType !== 'IMOBILIARIA') return false
+    if (field.section_id === 'CORRETOR' && intermediaryType !== 'CORRETOR') return false
     return true
   })
 
@@ -74,6 +77,15 @@ export default function FormStep({ fields, sections, onSubmit, isLoading = false
   const isFirstStep = formStepIndex === 0
   const isLastStep = formStepIndex === FORM_STEPS.length - 1
   const hasCompradorSections = fields.some(f => f.section_id === 'COMPRADOR_PF') || fields.some(f => f.section_id === 'COMPRADOR_PJ')
+  const hasIntermediarySections = fields.some(f => f.section_id === 'IMOBILIARIA') || fields.some(f => f.section_id === 'CORRETOR')
+
+  const toggleIntermediaryType = (nextType: 'IMOBILIARIA' | 'CORRETOR') => {
+    setIntermediaryType(nextType)
+    const sectionToClear = nextType === 'IMOBILIARIA' ? 'CORRETOR' : 'IMOBILIARIA'
+    fields
+      .filter(f => f.section_id === sectionToClear)
+      .forEach(f => setValue(f.field_id, ''))
+  }
 
   const onSubmitForm = async (data: Record<string, any>) => {
     setError(null)
@@ -166,6 +178,36 @@ export default function FormStep({ fields, sections, onSubmit, isLoading = false
                   className="mr-2"
                 />
                 <span>Pessoa Jurídica</span>
+              </label>
+            </div>
+          </div>
+        )}
+
+        {currentSectionIds.includes('IMOBILIARIA') && hasIntermediarySections && (
+          <div className="bg-primary-50 border border-primary-200 rounded-lg p-4">
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Intermediação
+            </label>
+            <div className="flex gap-4">
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="radio"
+                  value="IMOBILIARIA"
+                  checked={intermediaryType === 'IMOBILIARIA'}
+                  onChange={() => toggleIntermediaryType('IMOBILIARIA')}
+                  className="mr-2"
+                />
+                <span>Dados da Imobiliária</span>
+              </label>
+              <label className="flex items-center cursor-pointer">
+                <input
+                  type="radio"
+                  value="CORRETOR"
+                  checked={intermediaryType === 'CORRETOR'}
+                  onChange={() => toggleIntermediaryType('CORRETOR')}
+                  className="mr-2"
+                />
+                <span>Dados do Corretor</span>
               </label>
             </div>
           </div>

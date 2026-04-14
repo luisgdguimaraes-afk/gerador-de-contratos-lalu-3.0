@@ -1,0 +1,9 @@
+# Deploy do frontend Next.js a partir da raiz do monorepo.
+# Netlify: https://docs.netlify.com/build/configure-builds/monorepos/
+[build]
+  base = "frontend"
+  command = "npm run build"
+  publish = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

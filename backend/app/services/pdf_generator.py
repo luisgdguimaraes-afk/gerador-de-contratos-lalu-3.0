@@ -1,10 +1,14 @@
 """
 Serviço para conversão de DOCX para PDF usando LibreOffice (soffice)
 """
+import asyncio
+import glob
 import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Optional
+
 from app.services.document_storage import DocumentStorage
 
 
@@ -14,25 +18,50 @@ class PDFGenerator:
     def __init__(self):
         self.storage = DocumentStorage()
     
-    def _get_libreoffice_executable(self) -> str:
+    def _find_libreoffice_windows_glob(self) -> Optional[str]:
+        """Localiza soffice.exe em instalações LibreOffice 7.x, 24.x, etc."""
+        bases = []
+        pf = os.environ.get("ProgramFiles")
+        pfx86 = os.environ.get("ProgramFiles(x86)")
+        if pf:
+            bases.append(pf)
+        if pfx86:
+            bases.append(pfx86)
+        if not bases:
+            bases = [r"C:\Program Files", r"C:\Program Files (x86)"]
+        for base in bases:
+            pattern = os.path.join(base, "LibreOffice*", "program", "soffice.exe")
+            matches = sorted(glob.glob(pattern), reverse=True)
+            if matches:
+                return matches[0]
+        local = os.environ.get("LOCALAPPDATA")
+        if local:
+            pattern = os.path.join(local, "Programs", "LibreOffice*", "program", "soffice.exe")
+            matches = sorted(glob.glob(pattern), reverse=True)
+            if matches:
+                return matches[0]
+        return None
+    
+    def _get_libreoffice_executable(self) -> Optional[str]:
         """
-        Retorna o executável do LibreOffice.
-        Por padrão usa 'soffice', mas pode ser sobrescrito com a variável de ambiente LIBREOFFICE_PATH.
-        No Windows, tenta encontrar automaticamente em locais comuns.
+        Retorna o executável do LibreOffice, ou None se não existir no sistema.
+        Ordem: LIBREOFFICE_PATH → PATH → caminhos comuns no Windows (incl. LibreOffice*).
         """
-        # Verificar variável de ambiente primeiro
         env_path = os.getenv("LIBREOFFICE_PATH")
         if env_path:
-            return env_path
+            env_path = env_path.strip().strip('"')
+            if os.path.isfile(env_path):
+                return env_path
+            candidate = os.path.join(env_path, "soffice.exe")
+            if os.path.isfile(candidate):
+                return candidate
         
-        # Tentar encontrar no PATH
         import shutil
         soffice_path = shutil.which("soffice")
         if soffice_path:
             return soffice_path
         
-        # No Windows, tentar locais comuns
-        if os.name == 'nt':  # Windows
+        if os.name == "nt":
             common_paths = [
                 r"C:\Program Files\LibreOffice\program\soffice.exe",
                 r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
@@ -40,9 +69,22 @@ class PDFGenerator:
             for path in common_paths:
                 if os.path.exists(path):
                     return path
+            found = self._find_libreoffice_windows_glob()
+            if found:
+                return found
         
-        # Fallback: retornar 'soffice' e deixar o subprocess gerar erro se não encontrar
-        return "soffice"
+        return None
+    
+    def _convert_via_docx2pdf(self, docx_path: str, pdf_path: str) -> bool:
+        """Fallback no Windows: Microsoft Word via pacote docx2pdf (já em requirements)."""
+        try:
+            from docx2pdf import convert
+            convert(docx_path, pdf_path)
+            p = Path(pdf_path)
+            return p.exists() and p.stat().st_size > 0
+        except Exception as e:
+            print(f"[PDF_GENERATOR] docx2pdf (Word) falhou: {e}")
+            return False
     
     async def convert_to_pdf(self, docx_path: str, document_id: str, output_dir: str = None) -> str:
         """
@@ -69,17 +111,30 @@ class PDFGenerator:
         # Garantir que o diretório de saída existe
         output_dir_path.mkdir(parents=True, exist_ok=True)
         
-        libreoffice_exec = self._get_libreoffice_executable()
-        
-        # O LibreOffice gera o PDF com o nome baseado no arquivo DOCX original
-        # Precisamos detectar o nome real do PDF gerado e renomeá-lo
-        docx_path_obj = Path(docx_path).resolve()  # Garantir caminho absoluto
-        docx_name_without_ext = docx_path_obj.stem  # Nome sem extensão
+        docx_path_obj = Path(docx_path).resolve()
+        docx_name_without_ext = docx_path_obj.stem
         expected_libreoffice_pdf = output_dir_path.resolve() / f"{docx_name_without_ext}.pdf"
-        
-        # Garantir que o caminho do DOCX é absoluto (necessário no Windows)
         abs_docx_path = str(docx_path_obj)
         abs_output_dir = str(output_dir_path.resolve())
+        pdf_path_resolved = pdf_path.resolve()
+        
+        libreoffice_exec = self._get_libreoffice_executable()
+        
+        if libreoffice_exec is None:
+            if os.name == "nt":
+                ok = await asyncio.to_thread(
+                    self._convert_via_docx2pdf, abs_docx_path, str(pdf_path_resolved)
+                )
+                if ok:
+                    print(f"[PDF_GENERATOR] PDF gerado via Microsoft Word (docx2pdf): {pdf_path_resolved}")
+                    return str(pdf_path_resolved)
+            raise Exception(
+                "LibreOffice (soffice) não foi encontrado no sistema.\n\n"
+                "Instale o LibreOffice em https://www.libreoffice.org (recomendado) ou defina "
+                "LIBREOFFICE_PATH com o caminho completo do executável soffice.exe.\n\n"
+                "No Windows, se o Microsoft Word estiver instalado, o sistema também tenta "
+                "converter por ele automaticamente."
+            )
         
         cmd = [
             libreoffice_exec,
@@ -151,7 +206,6 @@ class PDFGenerator:
                 raise Exception("PDF gerado está vazio.")
             
             # Se o nome do PDF gerado é diferente do esperado, renomear
-            pdf_path_resolved = pdf_path.resolve()
             if expected_libreoffice_pdf.resolve() != pdf_path_resolved:
                 print(f"[PDF_GENERATOR] Renomeando PDF de {expected_libreoffice_pdf} para {pdf_path_resolved}")
                 if pdf_path_resolved.exists():
@@ -176,11 +230,18 @@ class PDFGenerator:
         except subprocess.TimeoutExpired:
             raise Exception("Timeout na conversão para PDF via LibreOffice (processo demorou demais).")
         except FileNotFoundError:
+            if os.name == "nt":
+                ok = await asyncio.to_thread(
+                    self._convert_via_docx2pdf, abs_docx_path, str(pdf_path_resolved)
+                )
+                if ok:
+                    print(f"[PDF_GENERATOR] PDF gerado via Microsoft Word (docx2pdf): {pdf_path_resolved}")
+                    return str(pdf_path_resolved)
             raise Exception(
                 "LibreOffice (soffice) não foi encontrado no sistema.\n\n"
-                "Verifique se o LibreOffice está instalado e se o executável 'soffice' "
-                "está no PATH, ou defina a variável de ambiente LIBREOFFICE_PATH "
-                "com o caminho completo para o executável."
+                "Instale o LibreOffice em https://www.libreoffice.org ou defina LIBREOFFICE_PATH "
+                "com o caminho completo do soffice.exe.\n\n"
+                "No Windows, com Microsoft Word instalado, a conversão também pode funcionar automaticamente."
             )
         except Exception as e:
             raise Exception(f"Erro ao converter para PDF via LibreOffice: {str(e)}")

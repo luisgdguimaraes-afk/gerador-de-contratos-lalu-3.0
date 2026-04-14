@@ -53,20 +53,25 @@ export default function DownloadStep({ documentId, onReset, documents }: Downloa
 
   const condicoesGeraisId = getCondicoesGeraisId()
 
-  const handleDownload = async (downloadId: string, filenamePrefix: string) => {
+  const handleDownload = async (downloadId: string, filenamePrefix: string, format: 'pdf' | 'docx') => {
     try {
-      setDownloadingId(downloadId)
-      console.log(`[DOWNLOAD] Iniciando download de: ${downloadId}`)
+      const requestId = `${downloadId}:${format}`
+      setDownloadingId(requestId)
+      console.log(`[DOWNLOAD] Iniciando download de: ${downloadId} (${format})`)
       
-      const response = await contractApi.downloadContract(downloadId)
+      const response = await contractApi.downloadContract(downloadId, format)
       console.log(`[DOWNLOAD] Resposta recebida:`, response.status, response.headers)
       
       // Criar blob e fazer download
-      const blob = new Blob([response.data], { type: 'application/pdf' })
+      const blobType =
+        format === 'docx'
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/pdf'
+      const blob = new Blob([response.data], { type: blobType })
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
-      link.download = `${filenamePrefix}_${downloadId.slice(0, 8)}.pdf`
+      link.download = `${filenamePrefix}_${downloadId.slice(0, 8)}.${format}`
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)
@@ -97,48 +102,43 @@ export default function DownloadStep({ documentId, onReset, documents }: Downloa
           Contrato Gerado com Sucesso!
         </h2>
         <p className="text-subtitle">
-          Seu contrato está pronto para download em formato PDF.
+          Seus documentos estão prontos para download em PDF ou Word.
         </p>
       </div>
 
       <div className="space-y-4">
-        {/* Botão principal (compatibilidade): sempre disponível */}
-        <button
-          onClick={() => handleDownload(documentId, 'contrato')}
-          disabled={downloadingId !== null}
-          className="w-full max-w-xs mx-auto bg-primary-600 text-white py-3 px-6 rounded-lg 
-                     hover:bg-primary-700 disabled:bg-gray-400 transition-colors
-                     flex items-center justify-center gap-2"
-        >
-          {downloadingId === documentId ? (
-            <>
-              <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              Baixando...
-            </>
-          ) : (
-            <>
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              Baixar Contrato (PDF)
-            </>
-          )}
-        </button>
+        {/* Contrato principal */}
+        <div className="max-w-xs mx-auto grid grid-cols-2 gap-2">
+          <button
+            onClick={() => handleDownload(documentId, 'contrato', 'pdf')}
+            disabled={downloadingId !== null}
+            className="bg-primary-600 text-white py-3 px-4 rounded-lg 
+                       hover:bg-primary-700 disabled:bg-gray-400 transition-colors text-sm"
+          >
+            {downloadingId === `${documentId}:pdf` ? 'Baixando...' : 'Contrato PDF'}
+          </button>
+          <button
+            onClick={() => handleDownload(documentId, 'contrato', 'docx')}
+            disabled={downloadingId !== null}
+            className="bg-white border border-primary-600 text-primary-600 py-3 px-4 rounded-lg 
+                       hover:bg-primary-50 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-400
+                       transition-colors text-sm"
+          >
+            {downloadingId === `${documentId}:docx` ? 'Baixando...' : 'Contrato Word'}
+          </button>
+        </div>
 
         {/* Botão para Condições Gerais (sempre disponível, pois sempre há dois documentos) */}
         {condicoesGeraisId && (
           <div className="max-w-xs mx-auto">
             <button
-              onClick={() => handleDownload(condicoesGeraisId, 'condicoes_gerais')}
+              onClick={() => handleDownload(condicoesGeraisId, 'condicoes_gerais', 'pdf')}
               disabled={downloadingId !== null}
               className="w-full bg-white border border-primary-600 text-primary-600 py-2.5 px-4 rounded-lg 
                          hover:bg-primary-50 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-400
                          text-sm font-medium flex items-center justify-center gap-2"
             >
-              {downloadingId === condicoesGeraisId ? (
+              {downloadingId === `${condicoesGeraisId}:pdf` ? (
                 <>
                   <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
@@ -151,9 +151,18 @@ export default function DownloadStep({ documentId, onReset, documents }: Downloa
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  Condições Gerais
+                  Condições Gerais (PDF)
                 </>
               )}
+            </button>
+            <button
+              onClick={() => handleDownload(condicoesGeraisId, 'condicoes_gerais', 'docx')}
+              disabled={downloadingId !== null}
+              className="w-full mt-2 bg-white border border-primary-600 text-primary-600 py-2.5 px-4 rounded-lg 
+                         hover:bg-primary-50 disabled:bg-gray-100 disabled:border-gray-300 disabled:text-gray-400
+                         text-sm font-medium flex items-center justify-center gap-2"
+            >
+              {downloadingId === `${condicoesGeraisId}:docx` ? 'Baixando...' : 'Condições Gerais (Word)'}
             </button>
           </div>
         )}
@@ -168,8 +177,7 @@ export default function DownloadStep({ documentId, onReset, documents }: Downloa
       </div>
 
       <p className="mt-6 text-sm text-gray-500">
-        O contrato foi gerado em formato PDF para garantir que a formatação 
-        seja mantida em qualquer dispositivo ou programa.
+        PDF mantém a formatação original. Word permite edição posterior.
       </p>
     </div>
   )

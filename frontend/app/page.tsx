@@ -35,7 +35,14 @@ export default function Home() {
       setIsLoading(true)
       setError(null)
       const response = await contractApi.getSchema()
-      setSchema(response.data)
+      const visibleFields = (response.data.fields || []).filter(
+        (field: FieldInfo) => !field.field_id.startsWith('VENDEDOR_')
+      )
+      setSchema({
+        ...response.data,
+        fields: visibleFields,
+        total_fields: visibleFields.length,
+      })
     } catch (err: any) {
       setError('Erro ao carregar formulário. Tente novamente.')
       console.error('Erro ao carregar schema:', err)

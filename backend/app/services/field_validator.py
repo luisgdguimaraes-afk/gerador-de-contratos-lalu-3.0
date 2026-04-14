@@ -4,6 +4,8 @@ Serviço para validação de campos do formulário
 import re
 from typing import Dict, Any
 
+from app.services.contract_schema import ROTA_DO_SOL_SCHEMA, FieldType
+
 
 class FieldValidator:
     """Valida valores de campos conforme seus tipos"""
@@ -40,10 +42,29 @@ class FieldValidator:
                 # Adicionar field_id ao erro para facilitar debug
                 raise ValueError(f"Campo '{field_id}': {str(e)}")
     
+    def _schema_type_to_validator_type(self, field_type: FieldType) -> str:
+        """Alinha validação ao schema (ex.: UNIDADE_LOTE_NUMERO é TEXT, não número puro)."""
+        return {
+            FieldType.TEXT: "text",
+            FieldType.TEXTAREA: "text",
+            FieldType.SELECT: "text",
+            FieldType.NUMBER: "number",
+            FieldType.CURRENCY: "currency",
+            FieldType.DATE: "date",
+            FieldType.CPF: "cpf",
+            FieldType.CNPJ: "cnpj",
+            FieldType.CEP: "text",
+            FieldType.PHONE: "phone",
+            FieldType.EMAIL: "email",
+        }.get(field_type, "text")
+    
     def _infer_field_type(self, field_id: str, value: Any) -> str:
         """
         Infere o tipo do campo baseado no field_id
         """
+        if field_id in ROTA_DO_SOL_SCHEMA:
+            return self._schema_type_to_validator_type(ROTA_DO_SOL_SCHEMA[field_id].type)
+        
         field_id_lower = field_id.lower()
         
         if "cpf" in field_id_lower:

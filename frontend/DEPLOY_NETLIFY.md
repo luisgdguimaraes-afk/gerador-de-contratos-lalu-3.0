@@ -6,7 +6,7 @@ O erro 404 acontece porque o Next.js é uma aplicação que precisa de Server-Si
 
 ## ✅ Solução Implementada
 
-1. **Arquivo `netlify.toml` criado** - Configura o build e habilita o plugin Next.js
+1. **Arquivo `netlify.toml` na raiz do repositório** - `base = "frontend"`, build e plugin Next.js
 2. **`next.config.js` atualizado** - Otimizado para deploy no Netlify
 
 ## 📋 Passo a Passo para Deploy

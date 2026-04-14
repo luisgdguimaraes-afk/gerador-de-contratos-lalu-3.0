@@ -16,6 +16,12 @@ router = APIRouter()
 parser = DocumentParser()
 storage = DocumentStorage()
 
+HIDDEN_FIELD_PREFIXES = ("VENDEDOR_",)
+
+
+def _is_visible_field(field_id: str) -> bool:
+    return not field_id.startswith(HIDDEN_FIELD_PREFIXES)
+
 
 @router.get("/schema")
 async def get_contract_schema(template_id: Optional[str] = "rota_do_sol"):
@@ -45,7 +51,7 @@ async def get_contract_schema(template_id: Optional[str] = "rota_do_sol"):
                     mask=f.mask
                 )
                 for f in ROTA_DO_SOL_SCHEMA.values()
-                if f.section == section_id
+                if f.section == section_id and _is_visible_field(f.field_id)
             ]
             fields.extend(section_fields)
         
@@ -126,7 +132,7 @@ async def analyze_document(request: AnalyzeRequest):
                     section_id=section_id
                 )
                 for f in ROTA_DO_SOL_SCHEMA.values()
-                if f.section == section_id
+                if f.section == section_id and _is_visible_field(f.field_id)
             ]
             fields.extend(section_fields)
         

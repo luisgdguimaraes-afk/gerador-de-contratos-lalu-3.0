@@ -1,19 +1,17 @@
+# Blueprint Render: https://render.com/docs/blueprint-spec
+# Web Service com Docker (LibreOffice + FastAPI). Root do contexto = raiz do repositório.
 services:
   - type: web
     name: gerador-contratos-backend
-    env: python
+    runtime: docker
     region: oregon
     plan: free
-    buildCommand: |
-      # Atualizar apt-get
-      apt-get update
-      # Instalar LibreOffice
-      apt-get install -y libreoffice libreoffice-writer
-      # Instalar dependências Python
-      pip install -r backend/requirements.txt
-    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     envVars:
       - key: LIBREOFFICE_PATH
         value: /usr/bin/soffice
       - key: OPENAI_API_KEY
         sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini

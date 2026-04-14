@@ -1,6 +1,8 @@
 """
 Aplicação FastAPI para análise e preenchimento de contratos DOCX
 """
+import os
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -14,15 +16,20 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# Configurar CORS para permitir requisições do frontend
+# CORS: origens explícitas + regex para qualquer subdomínio *.netlify.app (previews).
+# Opcional: CORS_EXTRA_ORIGINS="https://meudominio.com,https://outro.com"
+_extra = os.getenv("CORS_EXTRA_ORIGINS", "")
+_extra_origins = [o.strip() for o in _extra.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:3001",
         "https://documentoslalu.netlify.app",
-        "https://*.netlify.app"  # Permite deploy previews
+        *_extra_origins,
     ],
+    allow_origin_regex=r"^https://[a-zA-Z0-9-]+\.netlify\.app$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
